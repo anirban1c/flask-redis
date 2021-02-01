@@ -1,0 +1,160 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: test
+spec: {}
+status: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+     app: dd
+  name: redis-config
+  namespace: test
+data:
+ redis_conf: |
+   maxmemory 2mb
+   maxmemory-policy allkeys-lru
+ nginx.conf: |
+  events {
+      worker_connections  10240;
+  }
+  http { 
+    server {
+          listen       8088;
+          server_name  _;
+          location / {
+              root   html;
+              index  index.html index.htm;
+          }
+      }
+  }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: dd
+  name: dd
+  namespace: test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: dd
+    spec:
+      containers:
+      - image: nginx
+        name: frontend
+        resources: {}
+        volumeMounts:
+        - mountPath: /usr/share/nginx/html
+          name: frontend  
+        #- mountPath: /etc/nginx
+        #  name: nginx-conf
+        ports:  
+        - containerPort: 80
+      - image: anirban1c/alpine-flask
+        name: middle
+        resources: {}
+        command: ["python3", "app.py"]
+        volumeMounts:
+        - mountPath: /app
+          name: app  
+        ports:  
+        - containerPort: 8081
+      - image: busybox
+        name: backend
+        command: ["/bin/sh", "-ec", "sleep 1000"]
+        ports:  
+        - containerPort: 9090
+        resources: {}
+        volumeMounts:
+        - mountPath: /apps
+          name: bdata
+      - image: redis:latest
+        name: redis
+        command: 
+          - redis-server 
+          - "/redis-master/redis.conf"
+        env: 
+        - name: master
+          value: "true"   
+        ports:  
+        - containerPort: 6379
+        resources: {}
+        volumeMounts:
+        - mountPath: /redis-master-data
+          name: redis-data
+        - mountPath: /redis-master
+          name: redisconfig
+      volumes:
+      - name: nginx-conf
+        configMap:
+          name: redis-config
+          items:
+          - key: nginx.conf
+            path: nginx.conf
+      - name: redisconfig
+        configMap:
+          name: redis-config
+          items:
+          - key: redis_conf
+            path: redis.conf
+      - name: logs
+        emptyDir: {}
+      - name: redis-data
+        emptyDir: {}
+      - name: mdata
+        emptyDir: {}
+      - name: bdata
+        hostPath:
+         path: /tmp
+      #
+      # update it on the host path
+      # /Users/anirban/mnt/goss/remote-vscode-containers/python
+      #
+      - name: app
+        hostPath:
+         path: /Users/anirban/apps/appc
+      - name: frontend
+        hostPath:
+         path: /Users/anirban/apps/appc/test-app
+status: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    app: dd
+  name: redis-svc
+  namespace: test
+spec:
+  ports:
+  - name: http-nginx
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  - name: tcp-redis
+    port: 6379
+    protocol: TCP
+    targetPort: 6379
+  - name: http-flask
+    port: 8081
+    protocol: TCP
+    targetPort: 8081
+  selector:
+    app: dd
+  type: ClusterIP
+---

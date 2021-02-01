@@ -1,0 +1,6 @@
+kapitan
+#azure-cli==1.1.0
+azure-cli
+addict
+ipython
+pytest
